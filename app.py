@@ -1,236 +1,238 @@
 """
 app.py
-Streamlit entry point and SaaS Dashboard for the AI-Powered Water Grievance Analyzer.
+Main Entry Point & Dynamic Navigation Router for AI-Powered Water Grievance Analyzer.
+Leverages Streamlit st.navigation and st.Page for dynamic role-based access control.
 """
 
 import pandas as pd
 import streamlit as st
 
 from config.settings import credentials_configured
+from core.auth import get_authenticated_user, get_current_role, logout
 from core.database import get_all_complaints, init_db
 from core.ui_icons import get_icon_svg
-from core.ui_theme import LOGO_PATH, apply_custom_theme
+from core.ui_theme import LOGO_PATH, apply_custom_theme, get_logo_base64, render_sidebar_account
 
-# Page configuration
+# Global Page Config
 st.set_page_config(
-    page_title="Dashboard - Water Grievance Analyzer",
+    page_title="AI-Powered Water Grievance Analyzer",
     page_icon=LOGO_PATH,
     layout="wide",
 )
 
-# Apply global UI design theme
+# Initialize Database & Theme
+init_db()
 apply_custom_theme()
 
-# Init database
-init_db()
 
-icon_accent = "#38bdf8"
-text_muted = "#94a3b8"
-
-# ── Hero Banner ───────────────────────────────────────────────────────────────
-st.markdown(
-    f"""
-    <div class="hero-banner">
-        <span class="sdg-tag">{get_icon_svg("water", color="#ffffff", size=14)} UN SDG 6: Clean Water & Sanitation</span>
-        <h1>AI-Powered Water Grievance Analyzer</h1>
-        <p>AI-assisted analysis and prioritization of citizen water complaints. Designed for municipal decision support leveraging IBM Granite on watsonx.ai.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ── Credentials Status Notice ──────────────────────────────────────────────────
-if not credentials_configured():
-    st.error(
-        "IBM watsonx.ai credentials are not configured. "
-        "Set WATSONX_API_KEY, WATSONX_PROJECT_ID, and WATSONX_URL in .env.",
+def render_role_selection_landing():
+    """Render high-impact landing page matching requested mockup design."""
+    logo_b64 = get_logo_base64()
+    logo_html = (
+        f'<img src="{logo_b64}" class="sidebar-logo-img" alt="Water Logo"/>'
+        if logo_b64
+        else get_icon_svg("water", color="#38bdf8", size=32)
     )
+
+    # ── Top Bar Header ────────────────────────────────────────────────────────
+    st.markdown(
+        f"""
+        <div class="landing-top-bar">
+            <div class="landing-top-logo">
+                <div class="sidebar-logo-wrapper" style="width: 44px; height: 44px;">
+                    {logo_html}
+                </div>
+                <div>
+                    <div class="landing-top-title">Water</div>
+                    <div class="landing-top-subtitle">Grievance Analyzer</div>
+                </div>
+            </div>
+            <div style="font-size: 0.88rem; color: #94a3b8; letter-spacing: 0.05em; font-weight: 500;">
+                AI for a Water-Secure Tomorrow
+            </div>
+            <div class="landing-top-sdg">
+                <div class="landing-top-sdg-tag">Clean Water. Stronger Communities.</div>
+                <div class="landing-top-sdg-val">SDG 6 — Clean Water and Sanitation</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Credentials Status Notice (if not configured) ──────────────────────────
+    if not credentials_configured():
+        st.error(
+            "IBM watsonx.ai credentials are not configured. "
+            "Set WATSONX_API_KEY, WATSONX_PROJECT_ID, and WATSONX_URL in .env.",
+        )
+
+    # ── Main Hero Title Block ──────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div class="landing-hero">
+            <h1 class="landing-hero-title">Water <span class="landing-hero-glow-blue">Grievance</span> Analyzer</h1>
+            <p class="landing-hero-tagline">Report. Analyze. Resolve. For a Healthier Tomorrow.</p>
+        </div>
+
+        <div class="role-section-header">
+            <h2 class="role-section-title">How would you like to continue?</h2>
+            <p class="role-section-subtitle">Choose your role to access the appropriate portal</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    current_role = get_current_role()
+    active_user = get_authenticated_user()
+
+    # ── Two Role Selection Cards Grid ─────────────────────────────────────────
+    role_col1, role_col2 = st.columns(2)
+
+    with role_col1:
+        st.markdown(
+            f"""
+            <div class="landing-card-citizen">
+                <div>
+                    <div class="role-icon-circle-blue">
+                        {get_icon_svg("user", color="#38bdf8", size=28, centered=True)}
+                    </div>
+                    <h3 class="role-card-title">Citizen</h3>
+                    <p class="role-card-desc">Report water-related problems and track your complaints.</p>
+                    <ul class="role-card-features">
+                        <li>{get_icon_svg("file-text", color="#38bdf8", size=18)} Submit a water complaint</li>
+                        <li>{get_icon_svg("search", color="#38bdf8", size=18)} View your complaints</li>
+                        <li>{get_icon_svg("bell", color="#38bdf8", size=18)} Get status updates</li>
+                    </ul>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='margin-top: 0.75rem;'></div>", unsafe_allow_html=True)
+        st.markdown('<div class="btn-citizen">', unsafe_allow_html=True)
+        if current_role == "citizen":
+            st.info(f"Signed in as Citizen (**{active_user}**)")
+            if st.button("Continue as Citizen →", type="primary", use_container_width=True, key="landing_citizen_btn"):
+                st.switch_page("pages/1_Submit_Complaint.py")
+        else:
+            if st.button("Continue as Citizen →", type="primary", use_container_width=True, key="landing_citizen_btn"):
+                st.switch_page("pages/3_Citizen_Login.py")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with role_col2:
+        st.markdown(
+            f"""
+            <div class="landing-card-municipal">
+                <div>
+                    <div class="role-icon-circle-green">
+                        {get_icon_svg("building", color="#34d399", size=28, centered=True)}
+                    </div>
+                    <h3 class="role-card-title">Municipal Team</h3>
+                    <p class="role-card-desc">Review, prioritize, and manage water grievances.</p>
+                    <ul class="role-card-features">
+                        <li>{get_icon_svg("layout", color="#34d399", size=18)} Access complaint dashboard</li>
+                        <li>{get_icon_svg("users", color="#34d399", size=18)} Assign teams and track progress</li>
+                        <li>{get_icon_svg("bar-chart-2", color="#34d399", size=18)} Take action for cleaner communities</li>
+                    </ul>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div style='margin-top: 0.75rem;'></div>", unsafe_allow_html=True)
+        st.markdown('<div class="btn-municipal">', unsafe_allow_html=True)
+        if current_role == "municipal":
+            st.info(f"Signed in as Officer (**{active_user}**)")
+            if st.button("Continue as Municipal Team →", type="primary", use_container_width=True, key="landing_muni_btn"):
+                st.switch_page("pages/5_Municipal_Dashboard.py")
+        else:
+            if st.button("Continue as Municipal Team →", type="primary", use_container_width=True, key="landing_muni_btn"):
+                st.switch_page("pages/4_Municipal_Login.py")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── 4 Column Feature Icons Bar ───────────────────────────────────────────
+    st.markdown(
+        f"""
+        <div class="landing-features-bar">
+            <div class="feature-item">
+                <div class="feature-item-icon">{get_icon_svg("feather", color="#34d399", size=20, centered=True)}</div>
+                <div>
+                    <div class="feature-item-title">Clean Water</div>
+                    <div class="feature-item-sub">Better Living</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-item-icon">{get_icon_svg("users", color="#38bdf8", size=20, centered=True)}</div>
+                <div>
+                    <div class="feature-item-title">Stronger Communities</div>
+                    <div class="feature-item-sub">Together We Solve</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-item-icon">{get_icon_svg("cpu", color="#38bdf8", size=20, centered=True)}</div>
+                <div>
+                    <div class="feature-item-title">AI-Powered</div>
+                    <div class="feature-item-sub">Smart Solutions</div>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-item-icon">{get_icon_svg("globe", color="#38bdf8", size=20, centered=True)}</div>
+                <div>
+                    <div class="feature-item-title">Sustainable Future</div>
+                    <div class="feature-item-sub">For Generations</div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Footer Bar ────────────────────────────────────────────────────────────
+    st.markdown(
+        """
+        <div class="landing-footer-bar">
+            <div>
+                <strong style="color: #ffffff;">Water Grievance Analyzer</strong> — An AI-powered solution for SDG 6
+            </div>
+            <div>
+                Clean Water Today. Brighter Tomorrow.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ── Define Streamlit Pages ────────────────────────────────────────────────────
+page_landing = st.Page(render_role_selection_landing, title="Role Selection", default=True)
+page_citizen_login = st.Page("pages/3_Citizen_Login.py", title="Citizen Login")
+page_municipal_login = st.Page("pages/4_Municipal_Login.py", title="Municipal Login")
+
+page_municipal_dashboard = st.Page("pages/5_Municipal_Dashboard.py", title="Dashboard", icon=":material/dashboard:")
+page_submit_complaint = st.Page("pages/1_Submit_Complaint.py", title="Submit Complaint", icon=":material/description:")
+page_my_complaints = st.Page("pages/2_My_Complaints.py", title="My Complaints", icon=":material/history:")
+
+page_about = st.Page("pages/6_About.py", title="About", icon=":material/info:")
+
+
+# ── Construct Role-Based Navigation Menu ─────────────────────────────────────
+current_role = get_current_role()
+
+if current_role == "citizen":
+    nav_structure = {
+        "CITIZEN PORTAL": [page_submit_complaint, page_my_complaints],
+        "INFO": [page_about],
+    }
+    pg = st.navigation(nav_structure, position="sidebar")
+elif current_role == "municipal":
+    nav_structure = {
+        "MUNICIPAL PORTAL": [page_municipal_dashboard],
+        "INFO": [page_about],
+    }
+    pg = st.navigation(nav_structure, position="sidebar")
 else:
-    status_bg = "rgba(16, 185, 129, 0.12)"
-    status_border = "rgba(16, 185, 129, 0.3)"
-    status_text = "#34d399"
-    st.markdown(
-        f"<div style='font-size: 0.85rem; background: {status_bg}; border: 1px solid {status_border}; color: {status_text}; padding: 0.5rem 0.9rem; border-radius: 8px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 8px;'>"
-        f"{get_icon_svg('check-circle', color=status_text, size=16)} "
-        f"<strong>System Status:</strong> IBM watsonx.ai API & SQLite Database Connected</div>",
-        unsafe_allow_html=True,
-    )
+    nav_structure = [page_landing, page_citizen_login, page_municipal_login]
+    pg = st.navigation(nav_structure, position="hidden")
 
-# ── Dashboard Overview Metrics ─────────────────────────────────────────────────
-complaints = get_all_complaints()
-total_count = len(complaints)
-high_sev_count = sum(1 for c in complaints if c.get("severity") == "High")
-urgent_pri_count = sum(1 for c in complaints if c.get("priority") == "Urgent")
-
-if total_count > 0:
-    df_temp = pd.DataFrame(complaints)
-    most_common_cat = df_temp["category"].value_counts().idxmax()
-else:
-    most_common_cat = "None Yet"
-
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.markdown(
-        f"""
-        <div class="saas-metric-card">
-            <div class="saas-metric-title">{get_icon_svg("file-text", color=text_muted, size=14)} Total Complaints</div>
-            <div class="saas-metric-value">{total_count}</div>
-            <div class="saas-metric-sub">Logged in database</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with col2:
-    sev_color = "#fb923c"
-    st.markdown(
-        f"""
-        <div class="saas-metric-card">
-            <div class="saas-metric-title">{get_icon_svg("alert-triangle", color=sev_color, size=14)} High Severity</div>
-            <div class="saas-metric-value" style="color: {sev_color} !important;">{high_sev_count}</div>
-            <div class="saas-metric-sub">Critical infrastructure issues</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with col3:
-    urg_color = "#f87171"
-    st.markdown(
-        f"""
-        <div class="saas-metric-card">
-            <div class="saas-metric-title">{get_icon_svg("shield-check", color=urg_color, size=14)} Urgent Priority</div>
-            <div class="saas-metric-value" style="color: {urg_color} !important;">{urgent_pri_count}</div>
-            <div class="saas-metric-sub">Requires immediate triage</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with col4:
-    st.markdown(
-        f"""
-        <div class="saas-metric-card">
-            <div class="saas-metric-title">{get_icon_svg("target", color=icon_accent, size=14)} Primary Issue Type</div>
-            <div class="saas-metric-value" style="font-size: 1.15rem; font-weight: 600;">{most_common_cat}</div>
-            <div class="saas-metric-sub">Most frequent category</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# ── Call-To-Action Banner & Quick Navigation ───────────────────────────────────
-cta_col1, cta_col2 = st.columns([3, 1])
-with cta_col1:
-    st.markdown(
-        f"### {get_icon_svg('search', color=icon_accent, size=20)} Analyze a Water Grievance",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "Submit unstructured citizen feedback for instant AI classification, "
-        "severity assessment, location extraction, and priority recommendation."
-    )
-with cta_col2:
-    st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
-    if st.button("Analyze Complaint", type="primary", use_container_width=True):
-        st.switch_page("pages/1_Analyze_Complaint.py")
-
-st.divider()
-
-# ── How It Works Section ───────────────────────────────────────────────────────
-st.markdown(
-    f"### {get_icon_svg('cpu', color=icon_accent, size=20)} How It Works",
-    unsafe_allow_html=True,
-)
-
-st.markdown(
-    f"""
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-        <div class="content-card">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.5rem;">
-                <div class="card-icon-box">{get_icon_svg("file-text", color=icon_accent, size=16)}</div>
-                <h4 style="margin: 0; font-size: 0.95rem;">1. Submit Complaint</h4>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0;">Citizens submit unstructured water grievances in natural language.</p>
-        </div>
-        <div class="content-card">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.5rem;">
-                <div class="card-icon-box">{get_icon_svg("sparkles", color=icon_accent, size=16)}</div>
-                <h4 style="margin: 0; font-size: 0.95rem;">2. AI Analysis</h4>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0;">IBM Granite model categorizes, extracts details, and evaluates severity.</p>
-        </div>
-        <div class="content-card">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.5rem;">
-                <div class="card-icon-box">{get_icon_svg("target", color=icon_accent, size=16)}</div>
-                <h4 style="margin: 0; font-size: 0.95rem;">3. Structured Results</h4>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0;">Instant structured dashboard display of location, duration, and priority.</p>
-        </div>
-        <div class="content-card">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.5rem;">
-                <div class="card-icon-box">{get_icon_svg("shield-check", color=icon_accent, size=16)}</div>
-                <h4 style="margin: 0; font-size: 0.95rem;">4. Human Review</h4>
-            </div>
-            <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0;">Municipal officers review advisory AI recommendations for dispatch.</p>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ── Responsible AI Statement Banner ───────────────────────────────────────────
-st.markdown(
-    f"""
-    <div class="disclaimer-box">
-        {get_icon_svg("shield-check", color=icon_accent, size=16)}
-        <span><strong>Responsible AI Notice:</strong> AI recommendations support human review and do not replace municipal decisions.</span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-st.divider()
-
-# ── Recent Complaints Overview ─────────────────────────────────────────────────
-st.markdown(
-    f"### {get_icon_svg('clock', color=icon_accent, size=20)} Recent Complaint Activity",
-    unsafe_allow_html=True,
-)
-
-if not complaints:
-    st.info(
-        "No complaints logged yet. Click **Analyze Complaint** above to process your first grievance."
-    )
-else:
-    recent_df = pd.DataFrame(complaints[:5])
-    recent_df["summary_short"] = recent_df["summary"].str.slice(0, 85) + recent_df["summary"].str[85:].apply(
-        lambda s: "…" if s else ""
-    )
-
-    display_recent = recent_df[["id", "submitted_at", "category", "severity", "priority", "summary_short"]].rename(
-        columns={
-            "id": "ID",
-            "submitted_at": "Submitted (UTC)",
-            "category": "Category",
-            "severity": "Severity",
-            "priority": "Priority",
-            "summary_short": "Summary",
-        }
-    )
-
-    st.dataframe(
-        display_recent,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "ID": st.column_config.NumberColumn(width="small"),
-            "Submitted (UTC)": st.column_config.TextColumn(width="medium"),
-            "Category": st.column_config.TextColumn(width="medium"),
-            "Severity": st.column_config.TextColumn(width="small"),
-            "Priority": st.column_config.TextColumn(width="small"),
-            "Summary": st.column_config.TextColumn(width="large"),
-        },
-    )
-
-    if st.button("View Full Review History", use_container_width=False):
-        st.switch_page("pages/2_Review_History.py")
+pg.run()
+render_sidebar_account()

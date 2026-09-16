@@ -92,25 +92,40 @@ The app will open at `http://localhost:8501` in your browser.
 
 ```
 AI-Water-Grievance-Analyzer/
-├── app.py                        # Streamlit entry point (multi-page router)
+├── app.py                        # Streamlit entry point (st.navigation role-aware landing & router)
 ├── pages/
-│   ├── 1_Analyze_Complaint.py    # Submit & analyze a complaint
-│   ├── 2_Review_History.py       # Browse past analyses from SQLite
-│   └── 3_About.py                # SDG 6 context, project info, disclaimer
+│   ├── 1_Submit_Complaint.py    # Citizen Portal: Submit grievance & run IBM Granite AI triage
+│   ├── 2_My_Complaints.py        # Citizen Portal: View own complaints & tracking status (Filtered by citizen_id)
+│   ├── 3_Citizen_Login.py        # Citizen Portal: Sign in / Register account
+│   ├── 4_Municipal_Login.py      # Municipal Portal: Officer authentication
+│   ├── 5_Municipal_Dashboard.py  # Municipal Portal: Queue, human review, team assignment (Protected)
+│   └── 6_About.py                # Public Info: SDG 6 context & system details
 ├── core/
 │   ├── __init__.py
+│   ├── auth.py                   # Role-aware authentication, session control & require_role guards
+│   ├── database.py               # SQLite schema, user auth, citizen ownership, & complaint CRUD
 │   ├── granite_client.py         # ibm-watsonx-ai SDK wrapper
-│   ├── prompt_builder.py         # Builds the structured prompt sent to Granite
-│   ├── response_parser.py        # Parses / validates Granite's JSON response
-│   └── database.py               # SQLite schema, insert, and query helpers
+│   ├── prompt_builder.py         # Structured prompt builder for Granite 3 8B Instruct
+│   ├── response_parser.py        # Robust JSON response parser
+│   ├── ui_icons.py               # Vector SVG icons
+│   └── ui_theme.py               # Municipal dark theme tokens, CSS, & branding sidebar
 ├── config/
-│   └── settings.py               # Reads env vars; exposes typed config constants
+│   └── settings.py               # Env var configuration loader
+├── tests/                        # Unit test suite
 ├── data/
-│   └── grievances.db             # SQLite database (created automatically at runtime)
-├── .env.example                  # Template showing required env var names
+│   └── grievances.db             # SQLite database (auto-initialized at runtime)
+├── .env.example                  # Environment variable template
 ├── requirements.txt              # Python dependencies
-└── README.md                     # This file
+└── README.md                     # Documentation
 ```
+
+---
+
+## Prototype Accounts
+
+- **Citizen Account**: `citizen@example.com` / `citizen123` (or register a new citizen account)
+- **Municipal Officer Account**: `officer` / `water2026`
+- **Municipal Admin Account**: `admin` / `admin123`
 
 ---
 

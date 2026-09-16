@@ -1,5 +1,5 @@
 """
-pages/3_About.py
+pages/6_About.py
 About page for the AI-Powered Water Grievance Analyzer.
 """
 
@@ -7,15 +7,6 @@ import pandas as pd
 import streamlit as st
 
 from core.ui_icons import get_icon_svg
-from core.ui_theme import LOGO_PATH, apply_custom_theme
-
-st.set_page_config(
-    page_title="About - Water Grievance Analyzer",
-    page_icon=LOGO_PATH,
-    layout="wide",
-)
-
-apply_custom_theme()
 
 icon_accent = "#38bdf8"
 
@@ -41,7 +32,7 @@ with col_prob:
         f"""
         <div class="content-card" style="height: 100%;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.8rem;">
-                <div class="card-icon-box">{get_icon_svg("target", color=icon_accent, size=18)}</div>
+                <div class="card-icon-box">{get_icon_svg("target", color=icon_accent, size=18, centered=True)}</div>
                 <h3 style="margin: 0; font-size: 1.1rem;">Problem Statement</h3>
             </div>
             <p style="color: var(--text-secondary); line-height: 1.6; font-size: 0.92rem;">
@@ -62,7 +53,7 @@ with col_sol:
         f"""
         <div class="content-card" style="height: 100%;">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 0.8rem;">
-                <div class="card-icon-box">{get_icon_svg("sparkles", color=icon_accent, size=18)}</div>
+                <div class="card-icon-box">{get_icon_svg("sparkles", color=icon_accent, size=18, centered=True)}</div>
                 <h3 style="margin: 0; font-size: 1.1rem;">The AI Solution</h3>
             </div>
             <p style="color: var(--text-secondary); line-height: 1.6; font-size: 0.92rem;">

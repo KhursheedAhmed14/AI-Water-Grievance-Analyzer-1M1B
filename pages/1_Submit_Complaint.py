@@ -9,30 +9,26 @@ from datetime import datetime
 import streamlit as st
 
 from config.settings import credentials_configured
-from core.database import insert_complaint
+from core.auth import get_current_role, require_role
+from core.database import get_complaint_by_id, insert_complaint
 from core.granite_client import analyze_complaint
 from core.response_parser import parse_response
 from core.ui_icons import get_icon_svg
-from core.ui_theme import LOGO_PATH, apply_custom_theme, get_status_badge_html
+from core.ui_theme import get_citizen_status_explanation, get_status_badge_html
 
-st.set_page_config(
-    page_title="Analyze Complaint - Water Grievance Analyzer",
-    page_icon=LOGO_PATH,
-    layout="wide",
-)
-
-apply_custom_theme()
+# Enforce Citizen authentication session
+require_role("citizen")
 
 icon_accent = "#38bdf8"
 
 # ── Page Header ───────────────────────────────────────────────────────────────
 st.markdown(
-    f"## {get_icon_svg('search', color=icon_accent, size=24)} Analyze Water Grievance",
+    f"## {get_icon_svg('search', color=icon_accent, size=24)} Submit Water Grievance",
     unsafe_allow_html=True,
 )
 st.markdown(
     "<p style='font-size: 1rem; color: var(--text-secondary); margin-bottom: 1.5rem;'>"
-    "AI-assisted analysis for faster review and prioritization of citizen water complaints."
+    "Submit your water issue for instant IBM Granite AI analysis and reference ID generation."
     "</p>",
     unsafe_allow_html=True,
 )
@@ -46,8 +42,19 @@ if not credentials_configured():
     st.stop()
 
 
+from core.auth import get_current_user_id, require_role
+
 def _run_analysis(complaint_text: str) -> dict:
-    """Call the full pipeline and return the parsed result dict (Preserves AI & DB logic)."""
+    """Call the full pipeline and return the parsed result dict (Preserves AI & DB logic).
+
+    Uses a session-state flag (_submission_in_progress) to guarantee that
+    exactly one DB record and one reference ID are created per user submission,
+    even if Streamlit reruns the script during the spinner.
+    """
+    # Guard: if a result is already stored, return it without re-running
+    if "analysis_result" in st.session_state:
+        return st.session_state["analysis_result"]
+
     raw_response = analyze_complaint(complaint_text)
     result = parse_response(raw_response)
     result["raw_text"] = complaint_text
@@ -55,16 +62,20 @@ def _run_analysis(complaint_text: str) -> dict:
     result["submitted_at"] = datetime.utcnow().isoformat()
     # Serialise key_facts list for DB storage
     result["key_facts"] = json.dumps(result.get("key_facts", []))
-    record_id = insert_complaint(result)
+    citizen_id = get_current_user_id()
+    record_id, reference_id = insert_complaint(result, citizen_id=citizen_id)
     # Restore list form for display
     result["key_facts"] = json.loads(result["key_facts"])
     result["record_id"] = record_id
+    result["reference_id"] = reference_id
     return result
 
 
 def _display_results(result: dict) -> None:
     """Render structured AI Analysis Result with strict equal card heights and alignment."""
     st.divider()
+    record_id = result.get("record_id")
+    reference_id = result.get("reference_id", f"#{record_id if record_id else 'New'}")
     summary_text = result.get("summary", "No summary available.")
     category_text = result.get("category", "Unclear")
     severity_text = result.get("severity", "Medium")
@@ -72,6 +83,13 @@ def _display_results(result: dict) -> None:
     location_text = result.get("location", "Unclear")
     duration_text = result.get("duration", "Unclear")
     affected_text = result.get("affected_people", "Unclear")
+
+    # Fetch live status from SQLite if record_id exists
+    live_status = "Pending"
+    if record_id and isinstance(record_id, int):
+        live_rec = get_complaint_by_id(record_id)
+        if live_rec and live_rec.get("status"):
+            live_status = live_rec.get("status")
 
     key_facts = result.get("key_facts", [])
     if isinstance(key_facts, str):
@@ -91,29 +109,55 @@ def _display_results(result: dict) -> None:
     else:
         missing_list = ["None identified"]
 
-    # Header Row with compact green status badge
-    badge_bg = "rgba(16, 185, 129, 0.12)"
-    badge_border = "rgba(16, 185, 129, 0.3)"
-    badge_color = "#34d399"
-
+    # ── Professional Success Confirmation Banner ───────────────────────────────
     st.markdown(
         f"""
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.5rem; margin-bottom: 1.2rem;">
-            <h2 style="font-size: 1.35rem; font-weight: 700; margin: 0;">AI Analysis Result</h2>
-            <div style="background: {badge_bg}; border: 1px solid {badge_border}; color: {badge_color}; font-weight: 600; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px;">
-                {get_icon_svg('check-circle', color=badge_color, size=14)}
-                Analysis Complete
+        <div style="background: rgba(16,185,129,0.10); border: 1.5px solid rgba(16,185,129,0.35);
+                    border-radius: 14px; padding: 1.5rem 1.8rem; margin-bottom: 1.4rem;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 0.9rem;">
+                {get_icon_svg('check-circle', color='#34d399', size=28)}
+                <h2 style="margin: 0; font-size: 1.35rem; font-weight: 700; color: #34d399;">Complaint Submitted Successfully</h2>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 1.2rem; align-items: flex-start; margin-bottom: 1rem;">
+                <div>
+                    <div style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+                                letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 0.3rem;">Reference ID</div>
+                    <div style="font-family: 'Courier New', monospace; font-size: 1.25rem; font-weight: 800;
+                                color: #38bdf8; background: rgba(56,189,248,0.10);
+                                border: 1px solid rgba(56,189,248,0.3); border-radius: 8px;
+                                padding: 0.35rem 0.9rem; letter-spacing: 0.08em; display: inline-block;">
+                        {reference_id}
+                    </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 0.35rem; justify-content: flex-end;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+                                     letter-spacing: 0.05em; color: var(--text-muted);">Current Status:</span>
+                        {get_status_badge_html(live_status)}
+                    </div>
+                    <div style="font-size: 0.88rem; color: var(--text-secondary); margin-top: 0.1rem;">
+                        {get_citizen_status_explanation(live_status)}
+                    </div>
+                </div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+    # "View My Complaints" action button — clean label without raw SVG source code
+    col_act, _ = st.columns([1, 2])
+    with col_act:
+        if st.button("View My Complaints", key="btn_view_my_complaints", type="primary", use_container_width=True):
+            st.switch_page("pages/2_My_Complaints.py")
+
     facts_items = "".join([f"<li>{fact}</li>" for fact in key_facts]) if key_facts else "<li>No key facts extracted</li>"
     missing_items = "".join([f"<li>{gap}</li>" for gap in missing_list])
 
-    # ── Top Row: Strict 3-Column Grid with Equal Height Alignment ──────────────
-    col1, col2, col3 = st.columns(3)
+    st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
+
+    # ── Top Row: 3-Column Grid with Proportional Width Alignment ──────────────
+    col1, col2, col3 = st.columns([1.3, 1, 1])
 
     with col1:
         st.markdown(
@@ -184,7 +228,7 @@ def _display_results(result: dict) -> None:
     st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
 
     # ── Second Row: Clean 2-Column Grid with Equal Height Alignment ───────────
-    b_col1, b_col2 = st.columns(2)
+    b_col1, b_col2 = st.columns([1, 1.2])
 
     with b_col1:
         st.markdown(
@@ -291,9 +335,9 @@ st.caption(f"Character count: **{char_len}** characters (minimum 20 required)")
 
 col_btn1, col_btn2 = st.columns([2, 1])
 with col_btn1:
-    analyze_btn = st.button("Analyze Complaint", type="primary", use_container_width=True)
+    analyze_btn = st.button("Submit Complaint", type="primary", use_container_width=True, key="btn_submit_complaint")
 with col_btn2:
-    if st.button("Analyze Another Complaint", type="secondary", use_container_width=True):
+    if st.button("Submit Another Complaint", type="secondary", use_container_width=True, key="btn_submit_another"):
         for key in ("analysis_result", "complaint_input"):
             st.session_state.pop(key, None)
         st.rerun()
@@ -301,14 +345,17 @@ with col_btn2:
 # ── Trigger Analysis ───────────────────────────────────────────────────────────
 if analyze_btn:
     if char_len < 20:
-        st.error("Please enter at least 20 characters before analyzing.")
+        st.error("Please enter at least 20 characters before submitting.")
     else:
+        # Only run analysis+insert if no result is stored yet.
+        # This prevents duplicate records on Streamlit reruns or repeated button clicks.
         if "analysis_result" not in st.session_state:
             with st.spinner("Analyzing complaint with IBM Granite on watsonx.ai..."):
                 try:
-                    st.session_state["analysis_result"] = _run_analysis(complaint_input.strip())
+                    result = _run_analysis(complaint_input.strip())
+                    st.session_state["analysis_result"] = result
                 except RuntimeError as exc:
-                    st.error(f"Analysis failed: {exc}")
+                    st.error(f"Submission failed: {exc}")
 
 # Display Results
 if "analysis_result" in st.session_state:
