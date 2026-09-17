@@ -236,6 +236,42 @@ class TestDatabaseFunctions(unittest.TestCase):
         self.assertEqual(pending_count, 2)      # Pending (rec1, rec4)
         self.assertEqual(resolved_count, 1)     # Resolved (rec3)
 
+    def test_postgres_missing_database_url_validation(self):
+        """
+        Validate that during application runtime (when DB_PATH is DEFAULT_DB_PATH),
+        if DATABASE_URL is missing, _get_connection() raises a clear ValueError configuration error.
+        """
+        old_url = os.environ.get("DATABASE_URL")
+        old_db_path = db_module.DB_PATH
+        try:
+            if "DATABASE_URL" in os.environ:
+                del os.environ["DATABASE_URL"]
+
+            # Set DB_PATH to default production path to simulate runtime call
+            db_module.DB_PATH = db_module.DEFAULT_DB_PATH
+
+            with self.assertRaises(ValueError) as ctx:
+                db_module._get_connection()
+
+            self.assertIn("DATABASE_URL environment variable is missing", str(ctx.exception))
+        finally:
+            db_module.DB_PATH = old_db_path
+            if old_url is not None:
+                os.environ["DATABASE_URL"] = old_url
+
+    def test_postgres_mode_helper(self):
+        """Verify is_postgres_mode() reflects DATABASE_URL state."""
+        old_url = os.environ.get("DATABASE_URL")
+        try:
+            os.environ["DATABASE_URL"] = "postgresql://user:pass@localhost:5432/testdb"
+            self.assertTrue(db_module.is_postgres_mode())
+
+            del os.environ["DATABASE_URL"]
+            self.assertFalse(db_module.is_postgres_mode())
+        finally:
+            if old_url is not None:
+                os.environ["DATABASE_URL"] = old_url
+
 
 if __name__ == "__main__":
     unittest.main()

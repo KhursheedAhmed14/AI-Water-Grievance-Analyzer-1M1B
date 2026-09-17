@@ -3,8 +3,12 @@ tests/test_auth.py
 Unit tests for core.auth dual-role prototype authentication functions.
 """
 
+import os
+import tempfile
 import unittest
+from pathlib import Path
 import streamlit as st
+import core.database as db_module
 from core.database import init_db
 from core.auth import (
     get_authenticated_user,
@@ -19,8 +23,21 @@ from core.auth import (
 
 class TestAuthFunctions(unittest.TestCase):
     def setUp(self):
+        fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="test_auth_")
+        os.close(fd)
+        self._tmp_path = Path(tmp_path)
+        self._original_db_path = db_module.DB_PATH
+        db_module.DB_PATH = self._tmp_path
+
         init_db()
         st.session_state.clear()
+
+    def tearDown(self):
+        db_module.DB_PATH = self._original_db_path
+        try:
+            self._tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def test_initial_state(self):
         self.assertIsNone(get_current_role())
