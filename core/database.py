@@ -127,10 +127,35 @@ CREATE TABLE IF NOT EXISTS complaints (
 # UNIFIED DATABASE CONNECTION & WRAPPER
 # ============================================================
 
+def get_database_url() -> str:
+    """
+    Retrieve PostgreSQL connection string cleanly across local environment and Streamlit Cloud.
+
+    Resolution order:
+    1. Streamlit Community Cloud Secrets (st.secrets["DATABASE_URL"])
+    2. Environment Variable (os.getenv("DATABASE_URL"))
+    3. Empty string if not found
+    """
+    # 1. Check Streamlit Cloud Secrets
+    try:
+        if hasattr(st, "secrets") and "DATABASE_URL" in st.secrets and st.secrets["DATABASE_URL"]:
+            val = str(st.secrets["DATABASE_URL"]).strip()
+            if val:
+                return val
+    except Exception:
+        pass
+
+    # 2. Check Environment Variable (os.environ / .env)
+    env_val = os.getenv("DATABASE_URL", "").strip()
+    if env_val:
+        return env_val
+
+    return ""
+
+
 def is_postgres_mode() -> bool:
-    """Return True if DATABASE_URL environment variable is set."""
-    db_url = os.getenv("DATABASE_URL", "").strip()
-    return bool(db_url)
+    """Return True if DATABASE_URL is configured in Streamlit secrets or os.environ."""
+    return bool(get_database_url())
 
 
 class DBWrapperCursor:
@@ -247,13 +272,13 @@ def _connect_pg_with_fallback(db_url: str):
 def _get_connection() -> DBWrapper:
     """
     Return a unified database connection.
-    Uses PostgreSQL via psycopg if DATABASE_URL environment variable is set.
+    Uses PostgreSQL via psycopg if DATABASE_URL is configured in Streamlit secrets or environment variables.
 
     In application runtime, DATABASE_URL is strictly required. If DATABASE_URL is missing,
     a clear ValueError configuration error is raised. SQLite fallback is restricted
     EXCLUSIVELY to isolated unit tests (where DB_PATH is explicitly redirected to a temp file).
     """
-    db_url = os.getenv("DATABASE_URL", "").strip()
+    db_url = get_database_url()
 
     if db_url:
         if not HAS_PSYCOPG:
@@ -272,8 +297,8 @@ def _get_connection() -> DBWrapper:
 
     if not is_test_environment:
         raise ValueError(
-            "Configuration Error: DATABASE_URL environment variable is missing. "
-            "Please configure DATABASE_URL in your environment or .env file to run the application with PostgreSQL."
+            "Configuration Error: DATABASE_URL is missing in both Streamlit Cloud Secrets and environment variables. "
+            "Please configure DATABASE_URL in Streamlit Secrets or local .env to run the application with PostgreSQL."
         )
 
     # Isolated unit test execution on temporary SQLite DB

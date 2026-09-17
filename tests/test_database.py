@@ -239,13 +239,18 @@ class TestDatabaseFunctions(unittest.TestCase):
     def test_postgres_missing_database_url_validation(self):
         """
         Validate that during application runtime (when DB_PATH is DEFAULT_DB_PATH),
-        if DATABASE_URL is missing, _get_connection() raises a clear ValueError configuration error.
+        if DATABASE_URL is missing in both st.secrets and os.environ, _get_connection() raises ValueError.
         """
+        import streamlit as st
         old_url = os.environ.get("DATABASE_URL")
         old_db_path = db_module.DB_PATH
         try:
             if "DATABASE_URL" in os.environ:
                 del os.environ["DATABASE_URL"]
+
+            # Ensure st.secrets has no DATABASE_URL during test
+            old_secrets = getattr(st, "secrets", None)
+            st.secrets = {}
 
             # Set DB_PATH to default production path to simulate runtime call
             db_module.DB_PATH = db_module.DEFAULT_DB_PATH
@@ -253,22 +258,30 @@ class TestDatabaseFunctions(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 db_module._get_connection()
 
-            self.assertIn("DATABASE_URL environment variable is missing", str(ctx.exception))
+            self.assertIn("DATABASE_URL is missing", str(ctx.exception))
         finally:
             db_module.DB_PATH = old_db_path
             if old_url is not None:
                 os.environ["DATABASE_URL"] = old_url
 
-    def test_postgres_mode_helper(self):
-        """Verify is_postgres_mode() reflects DATABASE_URL state."""
+    def test_get_database_url_resolution_order(self):
+        """Verify get_database_url prefers st.secrets over os.environ."""
+        import streamlit as st
         old_url = os.environ.get("DATABASE_URL")
         try:
-            os.environ["DATABASE_URL"] = "postgresql://user:pass@localhost:5432/testdb"
-            self.assertTrue(db_module.is_postgres_mode())
+            # 1. Environment variable fallback
+            os.environ["DATABASE_URL"] = "postgresql://envuser:envpass@localhost:5432/envdb"
+            st.secrets = {}
+            self.assertEqual(db_module.get_database_url(), "postgresql://envuser:envpass@localhost:5432/envdb")
 
-            del os.environ["DATABASE_URL"]
-            self.assertFalse(db_module.is_postgres_mode())
+            # 2. Streamlit Cloud Secrets precedence
+            st.secrets = {"DATABASE_URL": "postgresql://secretuser:secretpass@localhost:5432/secretdb"}
+            self.assertEqual(db_module.get_database_url(), "postgresql://secretuser:secretpass@localhost:5432/secretdb")
+
+            # 3. Mode helper returns True when configured
+            self.assertTrue(db_module.is_postgres_mode())
         finally:
+            st.secrets = {}
             if old_url is not None:
                 os.environ["DATABASE_URL"] = old_url
 
