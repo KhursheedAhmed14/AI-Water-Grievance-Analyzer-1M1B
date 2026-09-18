@@ -873,7 +873,6 @@ def apply_custom_theme():
 
         section[data-testid="stSidebar"] [data-testid="stLogo"],
         section[data-testid="stSidebar"] img[data-testid="stLogo"],
-        section[data-testid="stSidebar"] [data-testid="stSidebarHeader"],
         section[data-testid="stSidebar"] [data-testid="stSidebarNavSeparator"] {{
             display: none !important;
         }}

@@ -64,15 +64,20 @@ class TestDatabaseFunctions(unittest.TestCase):
         1. Create an OS-level temp file (empty, unique per test run).
         2. Close the OS file descriptor immediately so SQLite can own the file.
         3. Redirect core.database.DB_PATH to the temp file path.
-        4. Clear the st.cache_data cache so stale results cannot leak between tests.
-        5. Call init_db() to create the schema and seed users in the temp DB.
+        4. Temporarily pop DATABASE_URL so unit tests run 100% isolated on SQLite.
+        5. Clear the st.cache_data cache so stale results cannot leak between tests.
+        6. Call init_db() to create the schema and seed users in the temp DB.
         """
-        # mkstemp returns (fd, path); close fd so SQLite can open the file freely
+        import streamlit as st
+
         fd, tmp_path = tempfile.mkstemp(suffix=".db", prefix="test_grievances_")
         os.close(fd)
 
         self._tmp_path = Path(tmp_path)
         self._original_db_path = db_module.DB_PATH  # save for tearDown
+        self._env_db_url = os.environ.pop("DATABASE_URL", None)
+        self._st_secrets = getattr(st, "secrets", None)
+        st.secrets = {}
 
         # Redirect all DB operations to the temp file
         db_module.DB_PATH = self._tmp_path
@@ -89,9 +94,11 @@ class TestDatabaseFunctions(unittest.TestCase):
     def tearDown(self):
         """
         1. Clear the cache so no temp-DB results survive into subsequent tests.
-        2. Restore core.database.DB_PATH to the original production path.
+        2. Restore core.database.DB_PATH and environment state.
         3. Delete the temp file.
         """
+        import streamlit as st
+
         try:
             get_all_complaints.clear()
         except Exception:
@@ -99,6 +106,10 @@ class TestDatabaseFunctions(unittest.TestCase):
 
         # Restore production path BEFORE deleting the temp file
         db_module.DB_PATH = self._original_db_path
+        if self._env_db_url is not None:
+            os.environ["DATABASE_URL"] = self._env_db_url
+        if self._st_secrets is not None:
+            st.secrets = self._st_secrets
 
         # Remove the isolated temp DB (missing_ok=True in case already gone)
         try:

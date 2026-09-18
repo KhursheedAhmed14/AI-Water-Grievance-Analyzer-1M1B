@@ -331,7 +331,10 @@ selected_id = st.selectbox(
 )
 
 if selected_id is not None:
-    rec = get_complaint_by_id(selected_id)
+    rec = next((r for r in rows if r.get("id") == selected_id), None)
+    if rec is None:
+        rec = get_complaint_by_id(selected_id)
+
     if rec:
         submitted_str = str(rec.get("submitted_at", ""))[:19].replace("T", " ")
         ref_display = rec.get("reference_id") or "Reference ID unavailable"

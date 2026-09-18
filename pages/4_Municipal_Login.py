@@ -6,6 +6,7 @@ Municipal Team Portal Login for the AI-Powered Water Grievance Analyzer.
 import streamlit as st
 
 from core.auth import get_authenticated_user, is_municipal_authenticated, logout, render_municipal_login_form
+from core.landing import page_landing
 from core.ui_icons import get_icon_svg
 
 icon_accent = "#38bdf8"
@@ -61,5 +62,5 @@ if is_municipal_authenticated():
             st.rerun()
 else:
     if st.button("← Back to Role Selection", type="secondary"):
-        st.switch_page("app.py")
+        st.switch_page(page_landing)
     render_municipal_login_form()

@@ -213,7 +213,10 @@ selected_id = st.selectbox(
 )
 
 if selected_id is not None:
-    record = get_complaint_by_id(selected_id)
+    record = next((r for r in rows if r.get("id") == selected_id), None)
+    if record is None:
+        record = get_complaint_by_id(selected_id)
+
     if record is None or record.get("citizen_id") != citizen_id:
         st.error("Complaint record not found or access denied.")
     else:

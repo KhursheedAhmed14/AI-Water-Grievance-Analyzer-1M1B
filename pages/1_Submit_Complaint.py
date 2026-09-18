@@ -84,12 +84,13 @@ def _display_results(result: dict) -> None:
     duration_text = result.get("duration", "Unclear")
     affected_text = result.get("affected_people", "Unclear")
 
-    # Fetch live status from SQLite if record_id exists
-    live_status = "Pending"
-    if record_id and isinstance(record_id, int):
+    # Fetch live status from result or fallback to DB if needed
+    live_status = result.get("status", "Pending")
+    if (not live_status or live_status == "Pending") and record_id and isinstance(record_id, int) and "status" not in result:
         live_rec = get_complaint_by_id(record_id)
         if live_rec and live_rec.get("status"):
             live_status = live_rec.get("status")
+
 
     key_facts = result.get("key_facts", [])
     if isinstance(key_facts, str):

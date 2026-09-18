@@ -19,6 +19,13 @@ except ImportError:
     PgOperationalError = None
     HAS_PSYCOPG = False
 
+try:
+    from psycopg_pool import ConnectionPool
+    HAS_PSYCOPG_POOL = True
+except ImportError:
+    ConnectionPool = None
+    HAS_PSYCOPG_POOL = False
+
 # Resolve SQLite DB path relative to the project root for isolated unit testing
 DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "grievances.db"
 DB_PATH = DEFAULT_DB_PATH
@@ -158,6 +165,60 @@ def is_postgres_mode() -> bool:
     return bool(get_database_url())
 
 
+def _resolve_hostaddr(url: str) -> str | None:
+    """Resolve IPv4 address if standard getaddrinfo fails on local DNS."""
+    from urllib.parse import urlparse
+    import socket
+    import subprocess
+    import re
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return None
+        try:
+            socket.gethostbyname(hostname)
+            return None
+        except Exception:
+            pass
+        res = subprocess.run(["nslookup", hostname, "8.8.8.8"], capture_output=True, text=True, timeout=3)
+        ips = re.findall(r"([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)", res.stdout)
+        valid_ips = [ip for ip in ips if not ip.startswith("8.8.8")]
+        if valid_ips:
+            return valid_ips[-1]
+    except Exception:
+        pass
+    return None
+
+
+@st.cache_resource
+def get_pg_pool(db_url: str):
+    """
+    Create and cache a psycopg3 ConnectionPool for PostgreSQL.
+    Cached via @st.cache_resource so it persists across Streamlit reruns.
+    """
+    if not HAS_PSYCOPG or not HAS_PSYCOPG_POOL:
+        raise RuntimeError(
+            "PostgreSQL configuration detected in DATABASE_URL, but 'psycopg' or 'psycopg_pool' is not installed. "
+            "Please install psycopg[binary,pool]."
+        )
+
+    pool_kwargs = {"row_factory": dict_row}
+    hostaddr = _resolve_hostaddr(db_url)
+    if hostaddr:
+        pool_kwargs["hostaddr"] = hostaddr
+
+    return ConnectionPool(
+        conninfo=db_url,
+        min_size=1,
+        max_size=10,
+        kwargs=pool_kwargs,
+        check=ConnectionPool.check_connection,
+        max_idle=300,
+        max_lifetime=1800,
+    )
+
+
 class DBWrapperCursor:
     """Cursor wrapper for dict-style row access and normalized rowcount/lastrowid."""
 
@@ -196,9 +257,10 @@ class DBWrapper:
     Normalizes SQL placeholders (%s vs ? and %(name)s vs :name) and row representations.
     """
 
-    def __init__(self, raw_conn, is_pg: bool):
+    def __init__(self, raw_conn, is_pg: bool, pool=None):
         self.raw_conn = raw_conn
         self.is_pg = is_pg
+        self.pool = pool
 
     def _normalize_sql(self, sql: str, params: tuple | list | dict | None) -> tuple[str, tuple | list | dict | None]:
         if params is None:
@@ -238,7 +300,10 @@ class DBWrapper:
             self.raw_conn.commit()
 
     def close(self) -> None:
-        self.raw_conn.close()
+        if self.is_pg and self.pool is not None:
+            self.pool.putconn(self.raw_conn)
+        else:
+            self.raw_conn.close()
 
 
 def _connect_pg_with_fallback(db_url: str):
@@ -272,7 +337,7 @@ def _connect_pg_with_fallback(db_url: str):
 def _get_connection() -> DBWrapper:
     """
     Return a unified database connection.
-    Uses PostgreSQL via psycopg if DATABASE_URL is configured in Streamlit secrets or environment variables.
+    Uses PostgreSQL via psycopg connection pool if DATABASE_URL is configured in Streamlit secrets or environment variables.
 
     In application runtime, DATABASE_URL is strictly required. If DATABASE_URL is missing,
     a clear ValueError configuration error is raised. SQLite fallback is restricted
@@ -287,8 +352,13 @@ def _get_connection() -> DBWrapper:
                 "Please install psycopg[binary]."
             )
         try:
-            conn = _connect_pg_with_fallback(db_url)
-            return DBWrapper(conn, is_pg=True)
+            if HAS_PSYCOPG_POOL:
+                pool = get_pg_pool(db_url)
+                conn = pool.getconn()
+                return DBWrapper(conn, is_pg=True, pool=pool)
+            else:
+                conn = _connect_pg_with_fallback(db_url)
+                return DBWrapper(conn, is_pg=True)
         except Exception as e:
             raise RuntimeError(f"Failed to connect to PostgreSQL database via DATABASE_URL: {e}") from e
 
@@ -354,10 +424,6 @@ def generate_reference_id(year: int, conn: DBWrapper) -> str:
 
     return f"WGA-{year:04d}-{next_seq:05d}"
 
-
-# ============================================================
-# DATABASE INITIALIZATION / MIGRATION
-# ============================================================
 
 def init_db() -> None:
     """
@@ -479,6 +545,19 @@ def init_db() -> None:
 
     finally:
         conn.close()
+
+
+@st.cache_resource
+def ensure_db_initialized() -> bool:
+    """
+    Execute database table initialization, seeding, and migration ONCE per Streamlit app process.
+    Cached via @st.cache_resource so that subsequent Streamlit reruns do not re-run 10+ DDL/DML queries over network.
+    """
+    init_db()
+    return True
+
+
+
 
 
 # ============================================================

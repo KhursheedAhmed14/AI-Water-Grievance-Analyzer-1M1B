@@ -11,13 +11,66 @@ from core.database import authenticate_user, create_user, get_user_by_username
 from core.ui_icons import get_icon_svg
 
 
+from datetime import datetime, timedelta
+import secrets
+
+# Server-side active session store mapping opaque_token -> session_dict
+_ACTIVE_SERVER_SESSIONS: dict[str, dict] = {}
+
+
+def _create_server_session(user_id: int, user_name: str, user_role: str) -> str:
+    """Generate a cryptographically secure token and store session server-side."""
+    token = secrets.token_urlsafe(32)
+    _ACTIVE_SERVER_SESSIONS[token] = {
+        "user_id": user_id,
+        "user_name": user_name,
+        "user_role": user_role,
+        "expires_at": datetime.utcnow() + timedelta(hours=12),
+    }
+    return token
+
+
+def _validate_server_session(token: str) -> dict | None:
+    """Validate server-side token; return session dict if valid and unexpired."""
+    if not token or not isinstance(token, str):
+        return None
+    session_data = _ACTIVE_SERVER_SESSIONS.get(token)
+    if not session_data:
+        return None
+    if session_data.get("expires_at", datetime.min) < datetime.utcnow():
+        _ACTIVE_SERVER_SESSIONS.pop(token, None)
+        return None
+    return session_data
+
+
 def get_current_role() -> str | None:
-    """Return the active session role: 'citizen', 'municipal', or None if logged out."""
-    return st.session_state.get("user_role", None)
+    """Return active session role derived from authenticated session state or validated server token."""
+    role = st.session_state.get("user_role", None)
+    if role in ("citizen", "municipal"):
+        return role
+
+    # Validate opaque session token from URL query params (never trust raw role/user_id from URL)
+    token = st.query_params.get("session")
+    if token:
+        session_data = _validate_server_session(token)
+        if session_data:
+            role = session_data["user_role"]
+            st.session_state["user_role"] = role
+            st.session_state["user_name"] = session_data["user_name"]
+            st.session_state["user_id"] = session_data["user_id"]
+            st.session_state["session_token"] = token
+            return role
+
+    # Purge unauthenticated or legacy query parameters if invalid
+    if any(k in st.query_params for k in ("role", "user", "uid")):
+        st.query_params.clear()
+
+    return None
 
 
 def get_current_user_id() -> int | None:
     """Return the integer user_id of the active session user from SQLite."""
+    get_current_role()  # Ensure session role restoration from validated server token if needed
     return st.session_state.get("user_id", None)
 
 
@@ -33,13 +86,14 @@ def is_municipal_authenticated() -> bool:
 
 def get_authenticated_user() -> str | None:
     """Return the display username/email of the active session user."""
+    get_current_role()  # Ensure session role restoration from validated server token if needed
     return st.session_state.get("user_name", None)
 
 
 def login_citizen(user_or_email: str, password: str) -> tuple[bool, str]:
     """
-    Authenticate citizen user against SQLite users table (with fallback creation for demo ease).
-    Sets Citizen Session State (user_role, user_name, user_id).
+    Authenticate citizen user against SQLite users table.
+    Issues a server-side session token on successful authentication.
     """
     u_clean = user_or_email.strip().lower()
     p_clean = password.strip()
@@ -51,9 +105,13 @@ def login_citizen(user_or_email: str, password: str) -> tuple[bool, str]:
     if user:
         if user["role"] != "citizen":
             return False, "This account is registered for Municipal Officer access."
+        token = _create_server_session(user["id"], user["username"], "citizen")
         st.session_state["user_role"] = "citizen"
         st.session_state["user_name"] = user["username"]
         st.session_state["user_id"] = user["id"]
+        st.session_state["session_token"] = token
+        st.query_params.clear()
+        st.query_params["session"] = token
         return True, f"Welcome back, {user['username']}!"
 
     # Check if account exists with wrong password
@@ -64,9 +122,13 @@ def login_citizen(user_or_email: str, password: str) -> tuple[bool, str]:
     # Auto-register new citizen user in SQLite if non-existent for seamless testing
     success, msg, new_id = create_user(u_clean, p_clean, role="citizen", full_name="Citizen User")
     if success:
+        token = _create_server_session(new_id, u_clean, "citizen")
         st.session_state["user_role"] = "citizen"
         st.session_state["user_name"] = u_clean
         st.session_state["user_id"] = new_id
+        st.session_state["session_token"] = token
+        st.query_params.clear()
+        st.query_params["session"] = token
         return True, f"Citizen account created! Welcome, {u_clean}."
 
     return False, msg
@@ -75,7 +137,7 @@ def login_citizen(user_or_email: str, password: str) -> tuple[bool, str]:
 def login_municipal(username: str, password: str) -> tuple[bool, str]:
     """
     Authenticate municipal officer against SQLite users table.
-    Sets Municipal Session State (user_role, user_name, user_id).
+    Issues a server-side session token on successful authentication.
     """
     u_clean = username.strip().lower()
     p_clean = password.strip()
@@ -85,9 +147,13 @@ def login_municipal(username: str, password: str) -> tuple[bool, str]:
 
     user = authenticate_user(u_clean, p_clean, required_role="municipal")
     if user:
+        token = _create_server_session(user["id"], user["username"], "municipal")
         st.session_state["user_role"] = "municipal"
         st.session_state["user_name"] = user["username"]
         st.session_state["user_id"] = user["id"]
+        st.session_state["session_token"] = token
+        st.query_params.clear()
+        st.query_params["session"] = token
         return True, "Login successful."
 
     return False, "Invalid credentials. Demo Officer Login: officer / water2026"
@@ -97,19 +163,30 @@ def register_citizen(username: str, password: str, full_name: str = "") -> tuple
     """Register a new citizen in SQLite users table."""
     success, msg, new_id = create_user(username, password, role="citizen", full_name=full_name)
     if success:
+        u_clean = username.strip().lower()
+        token = _create_server_session(new_id, u_clean, "citizen")
         st.session_state["user_role"] = "citizen"
-        st.session_state["user_name"] = username.strip().lower()
+        st.session_state["user_name"] = u_clean
         st.session_state["user_id"] = new_id
+        st.session_state["session_token"] = token
+        st.query_params.clear()
+        st.query_params["session"] = token
     return success, msg
 
 
 def logout() -> None:
-    """Clear active role and user session state."""
+    """Revoke server-side session token and clear active session state."""
+    token = st.session_state.get("session_token") or st.query_params.get("session")
+    if token:
+        _ACTIVE_SERVER_SESSIONS.pop(token, None)
+
     st.session_state.pop("user_role", None)
     st.session_state.pop("user_name", None)
     st.session_state.pop("user_id", None)
+    st.session_state.pop("session_token", None)
     st.session_state.pop("municipal_authenticated", None)
     st.session_state.pop("municipal_user", None)
+    st.query_params.clear()
 
 
 # Backward compatibility aliases
