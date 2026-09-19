@@ -116,8 +116,7 @@ def apply_custom_theme():
     if not role:
         sidebar_hide_css = """
         section[data-testid="stSidebar"],
-        [data-testid="stSidebarNav"],
-        [data-testid="stSidebarCollapsedControl"] {
+        [data-testid="stSidebarNav"] {
             display: none !important;
             width: 0px !important;
         }
@@ -216,15 +215,52 @@ def apply_custom_theme():
         [data-testid="stAppViewContainer"],
         [data-testid="stMain"],
         [data-testid="stMainBlockContainer"],
-        [data-testid="stHeader"],
         .main,
         section.main {{
             background-color: var(--bg-app) !important;
             color: var(--text-primary) !important;
         }}
 
-        /* Hide default Streamlit top header toolbar, deploy button & developer main menu */
-        header[data-testid="stHeader"],
+        /* Reduce excessive top whitespace in main content area.
+           Streamlit's default block-container padding-top is ~6rem — override to ~1rem. */
+        [data-testid="stMainBlockContainer"],
+        .main .block-container,
+        section[data-testid="stMain"] > div,
+        .block-container {{
+            padding-top: 1rem !important;
+        }}
+
+        /* Hide default Streamlit top header toolbar, deploy button & developer main menu. */
+        header[data-testid="stHeader"] {{
+            background: transparent !important;
+            pointer-events: none !important;
+            height: auto !important;
+            min-height: 0 !important;
+        }}
+
+        /* Hide ALL sidebar collapse/expand arrow buttons - every known Streamlit variant */
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="collapsedControl"],
+        [data-testid="stSidebarCollapseButton"],
+        button[aria-label="Collapse sidebar"],
+        button[aria-label="Close sidebar"],
+        button[aria-label="open sidebar"],
+        button[aria-label="Open sidebar"],
+        button[kind="headerNoPadding"],
+        [data-testid="baseButton-headerNoPadding"],
+        header[data-testid="stHeader"] button,
+        header[data-testid="stHeader"] [data-testid="stSidebarCollapsedControl"],
+        section[data-testid="stSidebar"] > div > div > div > button:first-of-type,
+        section[data-testid="stSidebar"] button[data-testid="baseButton-headerNoPadding"] {{
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+            width: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+        }}
+
         [data-testid="stToolbar"],
         [data-testid="stDecoration"],
         #MainMenu {{
@@ -806,6 +842,8 @@ def apply_custom_theme():
         section[data-testid="stSidebar"] > div:first-child {{
             overflow: hidden !important;
             height: 100% !important;
+            padding-top: 0 !important;
+            margin-top: 0 !important;
         }}
         [data-testid="stSidebarContent"] {{
             overflow: hidden !important;
@@ -815,11 +853,16 @@ def apply_custom_theme():
             display: flex !important;
             flex-direction: column !important;
             height: 100% !important;
-            padding-top: 0.5rem !important;
+            padding-top: 0.2rem !important;
             padding-left: 0.8rem !important;
             padding-right: 0.8rem !important;
             padding-bottom: 1rem !important;
             overflow-y: auto !important;
+        }}
+        /* stSidebarUserContent: zero its own box padding BEFORE dissolving it with display:contents */
+        [data-testid="stSidebarUserContent"] {{
+            padding: 0 !important;
+            margin: 0 !important;
         }}
         [data-testid="stSidebarUserContent"],
         [data-testid="stSidebarUserContent"] > div,
@@ -871,10 +914,26 @@ def apply_custom_theme():
 
 
 
+        /* Fully collapse hidden sidebar nav elements so they contribute zero height */
         section[data-testid="stSidebar"] [data-testid="stLogo"],
         section[data-testid="stSidebar"] img[data-testid="stLogo"],
         section[data-testid="stSidebar"] [data-testid="stSidebarNavSeparator"] {{
             display: none !important;
+            height: 0 !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: hidden !important;
+        }}
+        /* Zero out stSidebarNav's own top padding - it holds Streamlit's page links
+           and carries a large built-in padding-top that creates whitespace above our custom branding */
+        [data-testid="stSidebarNav"] {{
+            padding-top: 0 !important;
+            margin-top: 0 !important;
+        }}
+        /* Zero Streamlit's inner sidebar wrapper div (second wrapper layer inside stSidebar > div:first-child) */
+        section[data-testid="stSidebar"] > div:first-child > div:first-child {{
+            padding-top: 0 !important;
+            margin-top: 0 !important;
         }}
 
         /* 1. Sidebar Top Branding Block */
